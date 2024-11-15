@@ -3,6 +3,7 @@ import logging
 import sys
 import traceback
 import warnings
+from typing import Generic, TypeVar
 
 from aiokafka.client import AIOKafkaClient
 from aiokafka.codec import has_gzip, has_lz4, has_snappy, has_zstd
@@ -30,11 +31,19 @@ log = logging.getLogger(__name__)
 
 _missing = object()
 
+def _identity(data: bytes) -> bytes:
+    return data
+
 
 _DEFAULT_PARTITIONER = DefaultPartitioner()
 
 
-class AIOKafkaProducer:
+KT = TypeVar("KT", contravariant=True)
+VT = TypeVar("VT", contravariant=True)
+ET = TypeVar("ET", bound=BaseException)
+
+
+class AIOKafkaProducer(Generic[KT, VT]):
     """A Kafka client that publishes records to the Kafka cluster.
 
     The producer consists of a pool of buffer space that holds records that
@@ -65,14 +74,14 @@ class AIOKafkaProducer:
             server-side log entries that correspond to this client.
             Default: ``aiokafka-producer-#`` (appended with a unique number
             per instance)
-        key_serializer (Callable): used to convert user-supplied keys to bytes
-            If not :data:`None`, called as ``f(key),`` should return
+        key_serializer (Callable[[KT], bytes]): used to convert user-supplied keys
+            to bytes. If not :data:`None`, called as ``f(key),`` should return
             :class:`bytes`.
-            Default: :data:`None`.
-        value_serializer (Callable): used to convert user-supplied message
-            values to :class:`bytes`. If not :data:`None`, called as
+            Default: :data:`_identity`.
+        value_serializer (Callable[[VT], bytes]): used to convert user-supplied
+            message values to :class:`bytes`. If not :data:`None`, called as
             ``f(value)``, should return :class:`bytes`.
-            Default: :data:`None`.
+            Default: :data:`_identity`.
         acks (Any): one of ``0``, ``1``, ``all``. The number of acknowledgments
             the producer requires the leader to have received before considering a
             request complete. This controls the durability of records that are
@@ -204,8 +213,8 @@ class AIOKafkaProducer:
         request_timeout_ms=40000,
         api_version="auto",
         acks=_missing,
-        key_serializer=None,
-        value_serializer=None,
+        key_serializer=_identity,
+        value_serializer=_identity,
         compression_type=None,
         max_batch_size=16384,
         partitioner=_DEFAULT_PARTITIONER,
@@ -451,7 +460,7 @@ class AIOKafkaProducer:
 
         Arguments:
             topic (str): topic where the message will be published
-            value (Optional): message value. Must be type :class:`bytes`, or be
+            value (VT, Optional): message value. Must be type :class:`bytes`, or be
                 serializable to :class:`bytes` via configured `value_serializer`. If
                 value is :data:`None`, key is required and message acts as a
                 ``delete``.
@@ -462,7 +471,7 @@ class AIOKafkaProducer:
             partition (int, Optional): optionally specify a partition. If not
                 set, the partition will be selected using the configured
                 `partitioner`.
-            key (Optional): a key to associate with the message. Can be used to
+            key (KT, Optional): a key to associate with the message. Can be used to
                 determine which partition to send the message to. If partition
                 is :data:`None` (and producer's partitioner config is left as default),
                 then messages with the same key will be delivered to the same

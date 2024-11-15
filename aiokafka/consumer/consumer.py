@@ -4,6 +4,7 @@ import re
 import sys
 import traceback
 import warnings
+from typing import Generic, TypeVar
 
 from aiokafka import __version__
 from aiokafka.abc import ConsumerRebalanceListener
@@ -26,7 +27,11 @@ from .subscription_state import SubscriptionState
 log = logging.getLogger(__name__)
 
 
-class AIOKafkaConsumer:
+KT = TypeVar("KT", covariant=True)
+VT = TypeVar("VT", covariant=True)
+
+
+class AIOKafkaConsumer(Generic[KT, VT]):
     """
     A client that consumes records from a Kafka cluster.
 
@@ -66,9 +71,9 @@ class AIOKafkaConsumer:
             Default: None
         group_instance_id (str or None): name of the group instance ID used for
             static membership (KIP-345)
-        key_deserializer (Callable): Any callable that takes a
+        key_deserializer (Callable[[bytes], KT]): Any callable that takes a
             raw message key and returns a deserialized key.
-        value_deserializer (Callable, Optional): Any callable that takes a
+        value_deserializer (Callable[[bytes], VT]): Any callable that takes a
             raw message value and returns a deserialized value.
         fetch_min_bytes (int): Minimum amount of data the server should
             return for a fetch request, otherwise wait up to
@@ -234,8 +239,8 @@ class AIOKafkaConsumer:
         client_id="aiokafka-" + __version__,
         group_id=None,
         group_instance_id=None,
-        key_deserializer=None,
-        value_deserializer=None,
+        key_deserializer=lambda x: x,
+        value_deserializer=lambda x: x,
         fetch_max_wait_ms=500,
         fetch_max_bytes=52428800,
         fetch_min_bytes=1,
@@ -1116,7 +1121,7 @@ class AIOKafkaConsumer:
         self._client.set_topics([])
         log.info("Unsubscribed all topics or patterns and assigned partitions")
 
-    async def getone(self, *partitions) -> ConsumerRecord:
+    async def getone(self, *partitions) -> ConsumerRecord[KT, VT]:
         """
         Get one message from Kafka.
         If no new messages prefetched, this method will wait for it.
@@ -1162,7 +1167,7 @@ class AIOKafkaConsumer:
 
     async def getmany(
         self, *partitions, timeout_ms=0, max_records=None
-    ) -> dict[TopicPartition, list[ConsumerRecord]]:
+    ) -> dict[TopicPartition, list[ConsumerRecord[KT, VT]]]:
         """Get messages from assigned topics / partitions.
 
         Prefetched messages are returned in batches by topic-partition.
@@ -1262,7 +1267,7 @@ class AIOKafkaConsumer:
             raise ConsumerStoppedError()
         return self
 
-    async def __anext__(self) -> ConsumerRecord:
+    async def __anext__(self) -> ConsumerRecord[KT, VT]:
         """Asyncio iterator interface for consumer
 
         Note:
